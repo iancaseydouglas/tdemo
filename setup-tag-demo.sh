@@ -112,7 +112,7 @@ else
 fi
 EOF
 
-
+cp -v scripts/*.sh tag-demo/scripts
 # Make scripts executable
 chmod +x tag-demo/scripts/*.sh
 
