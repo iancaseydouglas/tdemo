@@ -1,5 +1,5 @@
 #!/bin/bash
-# Adds tags to Azure resources that support tagging
+# Adds tags to Azure resources with simplified resource detection
 
 # Default values
 TARGET_DIR="."
@@ -75,15 +75,21 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
       return (res in skip_map)
     }
     
-    # Detect start of a resource
-    /resource/ { 
-      # Check if it specifically matches an Azure resource
-      if (match($0, /resource[ \t]*"(azurerm_[^"]*)"/, arr)) {
+    # Detect resource lines - simplified approach
+    /^[ \t]*resource[ \t]+"azurerm_/ { 
+      # Extract the resource type - everything between "azurerm_ and the next "
+      start_pos = index($0, "azurerm_")
+      temp = substr($0, start_pos)
+      end_pos = index(temp, "\"")
+      
+      if (start_pos > 0 && end_pos > 0) {
+        resource_type = substr($0, start_pos, end_pos - 1)
         in_resource = 1
-        resource_level = 0  # Will be incremented when we find first {
+        resource_level = 0
         has_tags = 0
-        current_resource = arr[1]
+        current_resource = resource_type
       }
+      
       print $0
       next
     }
