@@ -1,27 +1,8 @@
 #!/bin/bash
-# Adds tags to Azure resources with simplified resource detection
+# Adds tags to Azure resources while leaving untouched files unmodified
 
 # Default values
 TARGET_DIR="."
-
-# Resources that don't support tagging
-SKIP_RESOURCES=(
-  "azurerm_subnet"
-  "azurerm_virtual_network_peering"
-  "azurerm_route"
-  "azurerm_network_security_rule"
-  "azurerm_role_assignment"
-  "azurerm_policy_assignment"
-  "azurerm_monitor_diagnostic_setting"
-  "azurerm_private_endpoint_connection"
-  "azurerm_log_analytics_solution"
-  "azurerm_route_table_association"
-  "azurerm_subnet_network_security_group_association"
-  "azurerm_subnet_route_table_association"
-  "azurerm_proximity_placement_group"
-  "azurerm_management_lock"
-  "azurerm_virtual_machine_extension"
-)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -48,87 +29,69 @@ echo "Looking for Terraform files in: $TARGET_DIR"
 
 # Process each file individually
 find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
+  # Skip files that aren't in a modules directory
+  if [[ "$file" != *"/modules/"* ]]; then
+    continue
+  fi
+  
+  # Skip files that don't contain Azure resources (optimization)
+  if ! grep -q "^resource \"azurerm_" "$file"; then
+    continue
+  fi
+  
   echo "Processing $file"
   
   # Create a temporary file
   temp_file=$(mktemp)
   
-  # Process the file with awk
-  awk -v skip_list="${SKIP_RESOURCES[*]}" '
+  # Flag to track if any actual changes were made
+  changes_made=0
+  
+  # Process the file with awk for precise control
+  awk '
     # Track resource blocks and nesting levels
-    BEGIN { 
-      in_resource = 0
-      resource_level = 0
+    BEGIN { in_resource = 0; resource_level = 0; has_tags = 0; any_changes = 0; }
+    
+    # Detect start of an Azure resource (only at the top level)
+    /^resource "azurerm_/ { 
+      in_resource = 1
+      resource_level = 1
       has_tags = 0
-      any_changes = 0
-      current_resource = ""
-      
-      # Build an array of resources to skip
-      num_skip = split(skip_list, skip_array, " ")
-      for (i = 1; i <= num_skip; i++) {
-        skip_map[skip_array[i]] = 1
-      }
-    }
-    
-    # Simple function to check if a resource should be skipped
-    function is_skipped(res) {
-      return (res in skip_map)
-    }
-    
-    # Detect resource lines - simplified approach
-    /^[ \t]*resource[ \t]+"azurerm_/ { 
-      # Extract the resource type - everything between "azurerm_ and the next "
-      start_pos = index($0, "azurerm_")
-      temp = substr($0, start_pos)
-      end_pos = index(temp, "\"")
-      
-      if (start_pos > 0 && end_pos > 0) {
-        resource_type = substr($0, start_pos, end_pos - 1)
-        in_resource = 1
-        resource_level = 0
-        has_tags = 0
-        current_resource = resource_type
-      }
-      
       print $0
       next
     }
     
-    # Track opening braces
+    # Track opening braces to manage nesting
     /\{/ { 
-      if (in_resource) {
+      if (in_resource && resource_level > 0) {
         resource_level++
       }
       print $0
       next
     }
     
-    # Check for existing tags
+    # Check for existing tags at the resource level (level 1)
     /tags[ \t]*=/ {
-      if (in_resource) {
+      if (in_resource && resource_level == 1) {
         has_tags = 1
       }
       print $0
       next
     }
     
-    # Track closing braces
+    # Track closing braces to manage nesting
     /\}/ { 
       if (in_resource && resource_level > 0) {
         resource_level--
         
-        # If at the end of the resource block
+        # If returning to level 0, we are at the end of the resource
         if (resource_level == 0) {
-          # Add tags if needed AND resource type is not in skip list
-          if (!has_tags && !is_skipped(current_resource)) {
-            print "  tags = var.tags"
+          # Add tags if not already present and this is the end of a resource
+          if (!has_tags) {
+            printf "  tags = var.tags\n"
             any_changes = 1
           }
-          
-          # Reset for next resource
           in_resource = 0
-          current_resource = ""
-          has_tags = 0
         }
       }
       print $0
@@ -138,18 +101,21 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
     # Print all other lines
     { print $0 }
     
-    # Signal if changes were made
+    # Signal if any changes were made
     END { exit any_changes ? 1 : 0 }
   ' "$file" > "$temp_file"
   
-  # Check if changes were made
+  # Check if any changes were made (using awk's exit code)
   if [ $? -eq 1 ]; then
+    # Changes were made - replace the file
     mv "$temp_file" "$file"
     echo "  Tags added to resources"
+    changes_made=1
   else
+    # No changes - discard the temp file
     rm "$temp_file"
     echo "  No changes needed"
   fi
 done
 
-echo "Tags added to supported Azure resources"
+echo "Tags added only to resources that needed them"
