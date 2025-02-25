@@ -1,8 +1,39 @@
 #!/bin/bash
-# This script adds tags specifically to top-level Azure resources, not to nested blocks
+# Adds tags to Azure resources with flexible directory support
 
-# Process each file individually for better control
-for file in $(find ../modules -name "*.tf" -type f); do
+# Default values
+TARGET_DIR="."
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -d|--directory)
+      TARGET_DIR="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [options]"
+      echo "Options:"
+      echo "  -d, --directory DIR    Base directory to search from (default: current directory)"
+      echo "  -h, --help             Show this help message"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+echo "Looking for Terraform files in: $TARGET_DIR"
+
+# Process each file individually
+find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
+  # Skip files that aren't in a modules directory to be efficient
+  if [[ "$file" != *"/modules/"* ]]; then
+    continue
+  fi
+  
   echo "Processing $file"
   # Create a temporary file
   temp_file=$(mktemp)

@@ -1,8 +1,34 @@
 #!/bin/bash
-# This script adds tags parameter to module calls with proper nesting awareness
+# Adds tags parameter to module calls with flexible directory support
+
+# Default values
+TARGET_DIR="."
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -d|--directory)
+      TARGET_DIR="$2"
+      shift 2
+      ;;
+    -h|--help)
+      echo "Usage: $0 [options]"
+      echo "Options:"
+      echo "  -d, --directory DIR    Base directory to search from (default: current directory)"
+      echo "  -h, --help             Show this help message"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      exit 1
+      ;;
+  esac
+done
+
+echo "Looking for module calls in: $TARGET_DIR"
 
 # Process each file individually
-for file in $(find .. -name "*.tf" -type f); do
+for file in $(find "$TARGET_DIR" -name "*.tf" -type f); do
   echo "Processing $file"
   # Create a temporary file
   temp_file=$(mktemp)
