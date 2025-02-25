@@ -112,33 +112,6 @@ else
 fi
 EOF
 
-# Script 2: Module var injection
-cat > tag-demo/scripts/inject_module_vars.sh << 'EOF'
-#!/bin/bash
-find ../modules -name "variables.tf" -type f -exec sed -i '$ a\
-variable "tags" {\
-  description = "Resource tags"\
-  type        = map(string)\
-  default     = {}\
-}' {} \;
-echo "Tag variables added to modules"
-EOF
-
-# Script 3: Module call injection
-cat > tag-demo/scripts/inject_module_calls.sh << 'EOF'
-#!/bin/bash
-find .. -name "*.tf" -type f -exec sed -i '/^module/,/^}/{/tags.*=.*}/!{/^}/i\  tags = local.tags
-}' {} \;
-echo "Tags parameter added to module calls"
-EOF
-
-# Script 4: Resource tag injection
-cat > tag-demo/scripts/inject_resource_tags.sh << 'EOF'
-#!/bin/bash
-find ../modules -name "*.tf" -type f -exec sed -i '/^resource "azurerm_.*" .*{/,/^}/{/tags.*=.*}/!{/^}/i\  tags = var.tags
-}' {} \;
-echo "Tags added to Azure resources"
-EOF
 
 # Make scripts executable
 chmod +x tag-demo/scripts/*.sh
