@@ -1,10 +1,10 @@
 #!/bin/bash
-# Adds tags to Azure resources with exclusions for resources that don't support tagging
+# Adds tags to Azure resources that support tagging
 
 # Default values
 TARGET_DIR="."
 
-# Resources that don't support tagging (add more as needed)
+# Resources that don't support tagging
 SKIP_RESOURCES=(
   "azurerm_subnet"
   "azurerm_virtual_network_peering"
@@ -62,36 +62,35 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
       has_tags = 0
       any_changes = 0
       current_resource = ""
-      split(skip_list, skip_array, " ")
-    }
-    
-    # Function to check if resource should be skipped
-    function should_skip(resource) {
-      for (i in skip_array) {
-        if (resource == skip_array[i]) {
-          return 1
-        }
+      
+      # Build an array of resources to skip
+      num_skip = split(skip_list, skip_array, " ")
+      for (i = 1; i <= num_skip; i++) {
+        skip_map[skip_array[i]] = 1
       }
-      return 0
     }
     
-    # Detect start of an Azure resource
-    /resource[ \t]+"azurerm_/ { 
-      in_resource = 1
-      resource_level = 1
-      has_tags = 0
-      
-      # Extract resource type
-      match($0, /resource[ \t]+"([^"]+)"/, arr)
-      current_resource = arr[1]
-      
+    # Simple function to check if a resource should be skipped
+    function is_skipped(res) {
+      return (res in skip_map)
+    }
+    
+    # Detect start of a resource
+    /resource/ { 
+      # Check if it specifically matches an Azure resource
+      if (match($0, /resource[ \t]*"(azurerm_[^"]*)"/, arr)) {
+        in_resource = 1
+        resource_level = 0  # Will be incremented when we find first {
+        has_tags = 0
+        current_resource = arr[1]
+      }
       print $0
       next
     }
     
     # Track opening braces
     /\{/ { 
-      if (in_resource && resource_level > 0) {
+      if (in_resource) {
         resource_level++
       }
       print $0
@@ -100,7 +99,7 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
     
     # Check for existing tags
     /tags[ \t]*=/ {
-      if (in_resource && resource_level == 2) {
+      if (in_resource) {
         has_tags = 1
       }
       print $0
@@ -113,12 +112,17 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
         resource_level--
         
         # If at the end of the resource block
-        if (resource_level == 1) {
-          # Add tags if needed and resource supports them
-          if (!has_tags && !should_skip(current_resource)) {
+        if (resource_level == 0) {
+          # Add tags if needed AND resource type is not in skip list
+          if (!has_tags && !is_skipped(current_resource)) {
             print "  tags = var.tags"
             any_changes = 1
           }
+          
+          # Reset for next resource
+          in_resource = 0
+          current_resource = ""
+          has_tags = 0
         }
       }
       print $0
@@ -142,4 +146,4 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
   fi
 done
 
-echo "Tags added only to resources that support tagging"
+echo "Tags added to supported Azure resources"
