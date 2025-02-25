@@ -1,5 +1,5 @@
 #!/bin/bash
-# Adds tags parameter to module calls with flexible directory support
+# Adds tags parameter to module calls without changing file formatting
 
 # Default values
 TARGET_DIR="."
@@ -28,8 +28,9 @@ done
 echo "Looking for module calls in: $TARGET_DIR"
 
 # Process each file individually
-for file in $(find "$TARGET_DIR" -name "*.tf" -type f); do
+find "$TARGET_DIR" -name "*.tf" -type f | while read -r file; do
   echo "Processing $file"
+  
   # Create a temporary file
   temp_file=$(mktemp)
   
@@ -43,7 +44,7 @@ for file in $(find "$TARGET_DIR" -name "*.tf" -type f); do
       in_module = 1
       module_level = 1
       has_tags = 0
-      print
+      print $0
       next
     }
     
@@ -52,7 +53,7 @@ for file in $(find "$TARGET_DIR" -name "*.tf" -type f); do
       if (in_module && module_level > 0) {
         module_level++
       }
-      print
+      print $0
       next
     }
     
@@ -61,7 +62,7 @@ for file in $(find "$TARGET_DIR" -name "*.tf" -type f); do
       if (in_module && module_level == 1) {
         has_tags = 1
       }
-      print
+      print $0
       next
     }
     
@@ -74,21 +75,27 @@ for file in $(find "$TARGET_DIR" -name "*.tf" -type f); do
         if (module_level == 0) {
           # Add tags if not already present and this is the end of a module call
           if (!has_tags) {
-            print "  tags = local.tags"
+            printf "  tags = local.tags\n"
           }
           in_module = 0
         }
       }
-      print
+      print $0
       next
     }
     
     # Print all other lines
-    { print }
+    { print $0 }
   ' "$file" > "$temp_file"
   
-  # Replace the original file
-  mv "$temp_file" "$file"
+  # Only replace if file actually changed
+  if ! cmp -s "$file" "$temp_file"; then
+    mv "$temp_file" "$file"
+    echo "  Tags parameter added to module calls"
+  else
+    rm "$temp_file"
+    echo "  No changes made"
+  fi
 done
 
 echo "Tags parameter added to module calls"

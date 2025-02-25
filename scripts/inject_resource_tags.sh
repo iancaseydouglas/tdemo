@@ -1,5 +1,5 @@
 #!/bin/bash
-# Adds tags to Azure resources with flexible directory support
+# Adds tags to Azure resources without changing file formatting
 
 # Default values
 TARGET_DIR="."
@@ -29,16 +29,17 @@ echo "Looking for Terraform files in: $TARGET_DIR"
 
 # Process each file individually
 find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
-  # Skip files that aren't in a modules directory to be efficient
+  # Skip files that aren't in a modules directory
   if [[ "$file" != *"/modules/"* ]]; then
     continue
   fi
   
   echo "Processing $file"
+  
   # Create a temporary file
   temp_file=$(mktemp)
   
-  # Process the file with awk for precise control
+  # Process the file with awk
   awk '
     # Track resource blocks and nesting levels
     BEGIN { in_resource = 0; resource_level = 0; has_tags = 0; }
@@ -48,7 +49,7 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
       in_resource = 1
       resource_level = 1
       has_tags = 0
-      print
+      print $0
       next
     }
     
@@ -57,7 +58,7 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
       if (in_resource && resource_level > 0) {
         resource_level++
       }
-      print
+      print $0
       next
     }
     
@@ -66,7 +67,7 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
       if (in_resource && resource_level == 1) {
         has_tags = 1
       }
-      print
+      print $0
       next
     }
     
@@ -79,21 +80,27 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
         if (resource_level == 0) {
           # Add tags if not already present and this is the end of a resource
           if (!has_tags) {
-            print "  tags = var.tags"
+            printf "  tags = var.tags\n"
           }
           in_resource = 0
         }
       }
-      print
+      print $0
       next
     }
     
     # Print all other lines
-    { print }
+    { print $0 }
   ' "$file" > "$temp_file"
   
-  # Replace the original file
-  mv "$temp_file" "$file"
+  # Only replace if file actually changed
+  if ! cmp -s "$file" "$temp_file"; then
+    mv "$temp_file" "$file"
+    echo "  Tags added to resources"
+  else
+    rm "$temp_file"
+    echo "  No changes made"
+  fi
 done
 
 echo "Tags added to top-level Azure resources only"

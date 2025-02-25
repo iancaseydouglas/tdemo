@@ -1,5 +1,5 @@
 #!/bin/bash
-# Adds tags variable to module definitions with flexible directory support
+# Adds tags variable to module definitions without changing file formatting
 
 # Default values
 TARGET_DIR="."
@@ -29,7 +29,7 @@ echo "Looking for variables.tf files in: $TARGET_DIR"
 
 # Process each variables.tf file in modules directories
 find "$TARGET_DIR" -type f -name "variables.tf" | while read -r file; do
-  # Skip files that aren't in a modules directory to be efficient
+  # Skip files that aren't in a modules directory
   if [[ "$file" != *"/modules/"* ]]; then
     continue
   fi
@@ -42,9 +42,14 @@ find "$TARGET_DIR" -type f -name "variables.tf" | while read -r file; do
     continue
   fi
   
+  # Create a temporary file
+  temp_file=$(mktemp)
+  
+  # Copy the original file to temporary file
+  cp "$file" "$temp_file"
+  
   # Append tags variable to the file
-  cat >> "$file" << 'EOF'
-
+  cat >> "$temp_file" << 'EOF'
 variable "tags" {
   description = "Resource tags"
   type        = map(string)
@@ -52,6 +57,8 @@ variable "tags" {
 }
 EOF
 
+  # Replace the original file
+  mv "$temp_file" "$file"
   echo "  Added tags variable"
 done
 
