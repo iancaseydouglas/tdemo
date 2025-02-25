@@ -1,5 +1,5 @@
 #!/bin/bash
-# Adds tags to Azure resources without changing file formatting
+# Adds tags to Azure resources while leaving untouched files unmodified
 
 # Default values
 TARGET_DIR="."
@@ -34,15 +34,23 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
     continue
   fi
   
+  # Skip files that don't contain Azure resources (optimization)
+  if ! grep -q "^resource \"azurerm_" "$file"; then
+    continue
+  fi
+  
   echo "Processing $file"
   
   # Create a temporary file
   temp_file=$(mktemp)
   
-  # Process the file with awk
+  # Flag to track if any actual changes were made
+  changes_made=0
+  
+  # Process the file with awk for precise control
   awk '
     # Track resource blocks and nesting levels
-    BEGIN { in_resource = 0; resource_level = 0; has_tags = 0; }
+    BEGIN { in_resource = 0; resource_level = 0; has_tags = 0; any_changes = 0; }
     
     # Detect start of an Azure resource (only at the top level)
     /^resource "azurerm_/ { 
@@ -81,6 +89,7 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
           # Add tags if not already present and this is the end of a resource
           if (!has_tags) {
             printf "  tags = var.tags\n"
+            any_changes = 1
           }
           in_resource = 0
         }
@@ -91,16 +100,22 @@ find "$TARGET_DIR" -type f -name "*.tf" | while read -r file; do
     
     # Print all other lines
     { print $0 }
+    
+    # Signal if any changes were made
+    END { exit any_changes ? 1 : 0 }
   ' "$file" > "$temp_file"
   
-  # Only replace if file actually changed
-  if ! cmp -s "$file" "$temp_file"; then
+  # Check if any changes were made (using awk's exit code)
+  if [ $? -eq 1 ]; then
+    # Changes were made - replace the file
     mv "$temp_file" "$file"
     echo "  Tags added to resources"
+    changes_made=1
   else
+    # No changes - discard the temp file
     rm "$temp_file"
-    echo "  No changes made"
+    echo "  No changes needed"
   fi
 done
 
-echo "Tags added to top-level Azure resources only"
+echo "Tags added only to resources that needed them"
